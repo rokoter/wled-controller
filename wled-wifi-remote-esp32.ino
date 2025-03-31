@@ -30,32 +30,45 @@ void setup() {
 }
 
 void loop() {
-  int potRaw = analogRead(potPin);  // 0 – 4095 bij ESP32
-  if (abs(potRaw - vorigeWaarde) < 20) return;  // Alleen bij verandering
+  int potRaw = analogRead(potPin);
+  if (abs(potRaw - vorigeWaarde) < 20) return;
   vorigeWaarde = potRaw;
 
   if (potRaw < 100) {
-    // 🔇 Laag = vuur uit
     String msg = "{\"on\":false}";
     udp.beginPacket(wledIP, wledPort);
     udp.print(msg);
     udp.endPacket();
     Serial.println("🔥 Vuur UIT");
   } else {
-    // 🔥 Vlammen actief
     int vuurLevel = map(potRaw, 100, 4095, 0, 255);
     vuurLevel = constrain(vuurLevel, 0, 255);
-    
-    float scale = sqrt((float)vuurLevel / 255.0);  // Smooth overgang
 
-    int intensity = vuurLevel;
-    if (vuurLevel < 10) intensity = 0;
+    int intensity = 0;
+    int speed = 255;
+    int blur = 0;
+    int boost = 0;
 
-    int speed  = 100 + (1.0 - scale) * 155;  // Hoger = meer cooling bij lage vuurstand
-    int blur   = 20 + scale * 100;
-    int boost  = 10 + scale * 180;
+    if (vuurLevel < 10) {
+      intensity = 0;
+      speed = 255;
+      blur = 0;
+      boost = 0;
+    }
+    else if (vuurLevel < 50) {
+      intensity = map(vuurLevel, 10, 50, 5, 30);
+      speed = map(vuurLevel, 10, 50, 200, 150);
+      blur = map(vuurLevel, 10, 50, 5, 20);
+      boost = map(vuurLevel, 10, 50, 10, 50);
+    }
+    else {
+      float scale = sqrt((float)vuurLevel / 255.0);
+      intensity = vuurLevel;
+      speed  = 80 - scale * 50;
+      blur   = 10 + scale * 90;
+      boost  = 50 + scale * 200;
+    }
 
-    // JSON-opbouw
     String msg = "{\"on\":true,\"seg\":[{\"id\":0,"
                  "\"i\":" + String(intensity) +
                  ",\"sx\":" + String(speed) +
@@ -74,5 +87,5 @@ void loop() {
     Serial.println("    Boost: " + String(boost));
   }
 
-  delay(200);  // Refresh rate
+  delay(200);
 }
