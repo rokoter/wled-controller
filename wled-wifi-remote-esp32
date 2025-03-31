@@ -1,0 +1,78 @@
+#include <WiFi.h>
+#include <WiFiUdp.h>
+
+// 🛜 WiFi-instellingen
+const char* ssid = "WLED-AP";
+const char* password = "1234567890";
+
+// 🔥 IP-adres van jouw WLED-controller
+const IPAddress wledIP(4, 3, 2, 1); // ← IP van je WLED-matrix
+const uint16_t wledPort = 21324;
+
+WiFiUDP udp;
+
+const int potPin = 34;  // Gebruik een ADC pin, zoals GPIO 34
+int vorigeWaarde = -1;
+
+void setup() {
+  Serial.begin(115200);
+
+  // 💤 Schakel WiFi power-saving uit voor stabiliteit
+  WiFi.setSleep(false);  // <-- ESP32 equivalent van 'no sleep'
+  
+  WiFi.begin(ssid, password);
+  Serial.print("🔌 Verbinden met WiFi");
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("\n✅ Verbonden met WiFi");
+}
+
+void loop() {
+  int potRaw = analogRead(potPin);  // 0 – 4095 bij ESP32
+  if (abs(potRaw - vorigeWaarde) < 20) return;  // Alleen bij verandering
+  vorigeWaarde = potRaw;
+
+  if (potRaw < 100) {
+    // 🔇 Laag = vuur uit
+    String msg = "{\"on\":false}";
+    udp.beginPacket(wledIP, wledPort);
+    udp.print(msg);
+    udp.endPacket();
+    Serial.println("🔥 Vuur UIT");
+  } else {
+    // 🔥 Vlammen actief
+    int vuurLevel = map(potRaw, 100, 4095, 0, 255);
+    vuurLevel = constrain(vuurLevel, 0, 255);
+    
+    float scale = sqrt((float)vuurLevel / 255.0);  // Smooth overgang
+
+    int intensity = vuurLevel;
+    if (vuurLevel < 10) intensity = 0;
+
+    int speed  = 100 + (1.0 - scale) * 155;  // Hoger = meer cooling bij lage vuurstand
+    int blur   = 20 + scale * 100;
+    int boost  = 10 + scale * 180;
+
+    // JSON-opbouw
+    String msg = "{\"on\":true,\"seg\":[{\"id\":0,"
+                 "\"i\":" + String(intensity) +
+                 ",\"sx\":" + String(speed) +
+                 ",\"c2\":" + String(blur) +
+                 ",\"c3\":" + String(boost) +
+                 "}]}";
+
+    udp.beginPacket(wledIP, wledPort);
+    udp.print(msg);
+    udp.endPacket();
+
+    Serial.println("🔥 VuurLevel: " + String(vuurLevel));
+    Serial.println("    Intensity: " + String(intensity));
+    Serial.println("    Speed (cooling): " + String(speed));
+    Serial.println("    Blur: " + String(blur));
+    Serial.println("    Boost: " + String(boost));
+  }
+
+  delay(200);  // Refresh rate
+}
